@@ -1,9 +1,11 @@
 from .cel_rule import CelBodyRule
 from .not_pattern import NotPatternBodyRule
+from .unique_fields import UniqueFieldsBodyRule
 
 BODY_RULE_CLASSES = {
     "cel": CelBodyRule,
-    "not_pattern": NotPatternBodyRule
+    "not_pattern": NotPatternBodyRule,
+    "unique_fields": UniqueFieldsBodyRule
 }
 
 def get_body_rule(rule_config: dict):
