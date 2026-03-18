@@ -1,21 +1,6 @@
 # Dynamic Validation System
 
-Welcome to the Dynamic Validation Pipeline project! This README provides team members (especially Guy and Roni) a clear overview of how the validation policy system operates and how you can run it locally without debugging the environment.
-
-## 🚀 How to Run Locally
-
-You can run the FastAPI server directly via our entrypoint script.
-
-1. Install requirements:
-   ```bash
-   pip install -r requirements.txt
-   ```
-2. Start the server:
-   ```bash
-   python main.py
-   ```
-   *The server runs on `http://0.0.0.0:8080` with hot-reload enabled.*
-3. Open API Specs: Swagger UI is available at `http://localhost:8080/docs`
+Welcome to the Dynamic Validation Pipeline project! This README provides team members a clear overview of how the validation policy system operates.
 
 ## 🧠 How Validation Works
 
