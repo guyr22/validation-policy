@@ -1,6 +1,5 @@
 import logging
 from typing import Any, Callable, Dict, Annotated
-import celpy
 from pydantic import BaseModel, model_validator, TypeAdapter, ValidationError
 from pydantic_core import PydanticUndefined
 
@@ -9,6 +8,8 @@ from app.services.elastic import send_to_elastic
 from app.core.utils import get_dummy_value
 
 logger = logging.getLogger(__name__)
+
+_type_adapter_cache = {}
 
 def get_field_rules(schema_name: str, field_name: str, default: Any = PydanticUndefined) -> Any:
     """Helper to inject configuration rules directly into Pydantic Field declarations."""
@@ -35,14 +36,19 @@ def _process_soft_launch_injections(cls: Any, data: dict, rules: dict) -> Dict[s
         if base_level != 'soft_launch':
             continue
             
-        DynamicType = Annotated[field_info.annotation, *field_info.metadata]
+        cache_key = (cls, field_name)
+        if cache_key not in _type_adapter_cache:
+            DynamicType = Annotated[field_info.annotation, *field_info.metadata]
+            _type_adapter_cache[cache_key] = TypeAdapter(DynamicType)
+            
+        adapter = _type_adapter_cache[cache_key]
             
         is_invalid = False
         if field_name not in data:
             is_invalid = True
         else:
             try:
-                TypeAdapter(DynamicType).validate_python(data[field_name])
+                adapter.validate_python(data[field_name])
             except ValidationError:
                 is_invalid = True
                 
@@ -112,9 +118,9 @@ class DynamicValidationModel(BaseModel):
 
     def _evaluate_config_body_rules(self, data_dict: dict, body_rules: list) -> None:
         """Evaluates dynamically defined body-level rules from the configuration array."""
+        from .body_rules import get_body_rule
+        
         for rule_config in body_rules:
-            from .body_rules import get_body_rule
-            
             rule = get_body_rule(rule_config)
             if not rule:
                 logger.warning(f"Unsupported body rule type: {rule_config.get('type')}")
@@ -133,7 +139,7 @@ class DynamicValidationModel(BaseModel):
     def _evaluate_decorator_body_rules(self) -> None:
         """Evaluates explicitly declared decorator body rules attached to the Model class."""
         for attr_name in dir(self.__class__):
-            attr = getattr(self.__class__, attr_name)
+            attr = getattr(self.__class__, attr_name, None)
             if getattr(attr, '__is_body_rule__', False):
                 method = getattr(self, attr_name)
                 method()
