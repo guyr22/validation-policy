@@ -14,4 +14,4 @@ class BaseBodyRule(ABC):
         return self.rule_config.get("error_msg", "Dynamic rule failed.")
         
     def get_level(self) -> str:
-        return self.rule_config.get("level", "hard")
+        return self.rule_config.get("level", "strict")

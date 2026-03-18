@@ -29,8 +29,8 @@ def _process_soft_launch_injections(cls: Any, data: dict, rules: dict) -> Dict[s
     """Pre-processes dictionary to handle soft_launch injections."""
     soft_launch_errors = {}
     for field_name, field_info in cls.model_fields.items():
-        rule_config = rules.get(field_name, 'hard')
-        base_level = rule_config.get('level', 'hard') if isinstance(rule_config, dict) else rule_config
+        rule_config = rules.get(field_name, 'strict')
+        base_level = rule_config.get('level', 'strict') if isinstance(rule_config, dict) else rule_config
         
         if base_level != 'soft_launch':
             continue
@@ -59,16 +59,16 @@ def _process_soft_launch_injections(cls: Any, data: dict, rules: dict) -> Dict[s
 
 
 def _handle_validation_error(cls: Any, data: Any, rules: dict, error: ValidationError) -> Any:
-    """Handles parsing validation errors and determining if it's a hard fail or log_only wrapper build."""
+    """Handles parsing validation errors and determining if it's a strict fail or log_only wrapper build."""
     schema_name = cls.__name__
     errors = error.errors()
-    hard_errors = []
+    strict_errors = []
     
     for err in errors:
         loc = err.get('loc', [])
         field_name = loc[0] if loc else None
-        rule_config = rules.get(str(field_name), 'hard')
-        level = rule_config.get('level', 'hard') if isinstance(rule_config, dict) else rule_config
+        rule_config = rules.get(str(field_name), 'strict')
+        level = rule_config.get('level', 'strict') if isinstance(rule_config, dict) else rule_config
         
         if level == 'log_only':
             logger.warning(
@@ -78,9 +78,9 @@ def _handle_validation_error(cls: Any, data: Any, rules: dict, error: Validation
         elif level == 'soft_launch':
             pass # Pre-processed and safely handled dummy injection. Ignore cascading errors from dummy values failing strict constraints.
         else:
-            hard_errors.append(err)
+            strict_errors.append(err)
     
-    if hard_errors:
+    if strict_errors:
         raise error
     else:
         # If only log_only fields failed, force-build the object to bypass strict-typing

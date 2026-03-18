@@ -16,14 +16,14 @@ The core of this validation system is built upon **Pydantic V2** combined with a
 ## ⚙️ Enforcement Levels
 
 Different severity levels can be applied to validation rules to observe payload behaviors in production without breaking APIs immediately:
-- **`hard`**: Standard validation. Any failure raises a 422 Unprocessable Entity error.
+- **`strict`**: Standard validation. Any failure raises a 422 Unprocessable Entity error.
 - **`log_only`**: Validation failures are caught and logged as warnings (`[LOG_ONLY WARN]`), but the application continues processing the payload untouched.
 - **`soft_launch`**: Validation failures log the error and attempt to "heal" the payload by injecting dummy/default values, allowing parsing to proceed dynamically (often sending the error context seamlessly to elasticsearch via `send_to_elastic`).
 
 ## 🧱 Field Rules vs. Body Rules
 
 There are two primary places validation occurs:
-- **Field-level Rules**: Handled iteratively on specific schema attributes (e.g., `email: {"level": "hard", "pattern": "..."}`).
+- **Field-level Rules**: Handled iteratively on specific schema attributes (e.g., `email: {"level": "strict", "pattern": "..."}`).
 - **Body-level Rules**: Used to validate interdependent fields. 
   - *Dynamic Configuration Config*: Passed in via `__body_rules__` array in `settings` (e.g., CEL rules).
   - *Decorators*: Defined via `@body_rule` methods directly within the Pydantic schema class.
