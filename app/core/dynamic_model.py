@@ -110,15 +110,8 @@ class DynamicValidationModel(BaseModel):
             rules = MOCK_CONFIG.get(cls.__name__, {})
             return _handle_validation_error(cls, data, rules, e)
 
-    @model_validator(mode='after')
-    def run_body_rules(self) -> 'DynamicValidationModel':
-        """Scans the config and class for body-level rules and executes them."""
-        schema_name = self.__class__.__name__
-        config = MOCK_CONFIG.get(schema_name, {})
-        body_rules = config.get("__body_rules__", [])
-        
-        data_dict = self.model_dump()
-                            
+    def _evaluate_config_body_rules(self, data_dict: dict, body_rules: list) -> None:
+        """Evaluates dynamically defined body-level rules from the configuration array."""
         for rule_config in body_rules:
             from .body_rules import get_body_rule
             
@@ -137,9 +130,24 @@ class DynamicValidationModel(BaseModel):
                 else:
                     raise ValueError(error_msg)
 
+    def _evaluate_decorator_body_rules(self) -> None:
+        """Evaluates explicitly declared decorator body rules attached to the Model class."""
         for attr_name in dir(self.__class__):
             attr = getattr(self.__class__, attr_name)
             if getattr(attr, '__is_body_rule__', False):
                 method = getattr(self, attr_name)
                 method()
+
+    @model_validator(mode='after')
+    def run_body_rules(self) -> 'DynamicValidationModel':
+        """Scans the config and class for body-level rules and executes them."""
+        schema_name = self.__class__.__name__
+        config = MOCK_CONFIG.get(schema_name, {})
+        body_rules = config.get("__body_rules__", [])
+        
+        data_dict = self.model_dump()
+        
+        self._evaluate_config_body_rules(data_dict, body_rules)
+        self._evaluate_decorator_body_rules()
+                            
         return self
