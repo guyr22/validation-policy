@@ -4,7 +4,7 @@ from pydantic import BaseModel, model_validator, TypeAdapter, ValidationError
 from pydantic_core import PydanticUndefined
 
 from app.config.settings import MOCK_CONFIG
-from app.services.elastic import send_to_elastic
+
 from app.core.utils import get_dummy_value
 
 logger = logging.getLogger(__name__)
@@ -97,24 +97,39 @@ def _handle_validation_error(cls: Any, data: Any, rules: dict, error: Validation
 
 
 class DynamicValidationModel(BaseModel):
+    _soft_launch_report: dict = {}
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Cache decorator body rules at class definition time."""
+        super().__init_subclass__(**kwargs)
+        cls._cached_decorator_body_rules = [
+            attr_name
+            for attr_name in dir(cls)
+            if getattr(getattr(cls, attr_name, None), '__is_body_rule__', False)
+        ]
+
     @model_validator(mode='wrap')
     @classmethod
     def wrap_validation(cls, data: Any, handler: Callable[[Any], Any]) -> 'DynamicValidationModel':
+        soft_launch_report: dict = {}
+
         if isinstance(data, dict):
             schema_name = cls.__name__
             rules = MOCK_CONFIG.get(schema_name, {})
-            
             soft_launch_errors = _process_soft_launch_injections(cls, data, rules)
-            
+
             if soft_launch_errors:
-                send_to_elastic(schema_name, soft_launch_errors)
-                
+                soft_launch_report = {"schema": schema_name, "errors": soft_launch_errors}
+
         # Attempt standard validation
         try:
-            return handler(data)
+            instance = handler(data)
         except ValidationError as e:
             rules = MOCK_CONFIG.get(cls.__name__, {})
-            return _handle_validation_error(cls, data, rules, e)
+            instance = _handle_validation_error(cls, data, rules, e)
+
+        instance._soft_launch_report = soft_launch_report
+        return instance
 
     def _evaluate_config_body_rules(self, data_dict: dict, body_rules: list) -> None:
         """Evaluates dynamically defined body-level rules from the configuration array."""
@@ -138,11 +153,9 @@ class DynamicValidationModel(BaseModel):
 
     def _evaluate_decorator_body_rules(self) -> None:
         """Evaluates explicitly declared decorator body rules attached to the Model class."""
-        for attr_name in dir(self.__class__):
-            attr = getattr(self.__class__, attr_name, None)
-            if getattr(attr, '__is_body_rule__', False):
-                method = getattr(self, attr_name)
-                method()
+        for attr_name in getattr(self.__class__, '_cached_decorator_body_rules', []):
+            method = getattr(self, attr_name)
+            method()
 
     @model_validator(mode='after')
     def run_body_rules(self) -> 'DynamicValidationModel':
