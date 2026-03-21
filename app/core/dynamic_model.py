@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Callable, Dict, Annotated
+from typing import Any, Callable, Dict, Annotated, List
 from pydantic import BaseModel, model_validator, TypeAdapter, ValidationError
 from pydantic_core import PydanticUndefined
 
@@ -10,6 +10,7 @@ from app.core.utils import get_dummy_value
 logger = logging.getLogger(__name__)
 
 _type_adapter_cache = {}
+_body_rule_instances_cache: Dict[str, List[Any]] = {}
 
 def get_field_rules(schema_name: str, field_name: str, default: Any = PydanticUndefined) -> Any:
     """Helper to inject configuration rules directly into Pydantic Field declarations."""
@@ -132,20 +133,33 @@ class DynamicValidationModel(BaseModel):
         return instance
 
     def _evaluate_config_body_rules(self, data_dict: dict, body_rules: list) -> None:
-        """Evaluates dynamically defined body-level rules from the configuration array."""
-        from .body_rules import get_body_rule
-        
-        for rule_config in body_rules:
-            rule = get_body_rule(rule_config)
-            if not rule:
-                logger.warning(f"Unsupported body rule type: {rule_config.get('type')}")
-                continue
-                
+        """Evaluates body-level rules from config.
+
+        Rule instances are cached per schema to avoid per-alert allocations/initialization
+        (e.g., CEL compilation, regex compilation).
+        """
+        schema_name = self.__class__.__name__
+        cached_rules = _body_rule_instances_cache.get(schema_name)
+        if cached_rules is None:
+            from .body_rules import get_body_rule
+
+            instances: List[Any] = []
+            for rule_config in body_rules:
+                rule = get_body_rule(rule_config)
+                if not rule:
+                    logger.warning(f"Unsupported body rule type: {rule_config.get('type')}")
+                    continue
+                instances.append(rule)
+
+            _body_rule_instances_cache[schema_name] = instances
+            cached_rules = instances
+
+        for rule in cached_rules:
             is_valid = rule.evaluate(data_dict)
             if not is_valid:
                 error_msg = rule.get_error_message()
                 level = rule.get_level()
-                
+
                 if level == "log_only":
                     logger.warning(f"[LOG_ONLY WARN] Body rule failed. Error: {error_msg}")
                 else:
@@ -163,8 +177,9 @@ class DynamicValidationModel(BaseModel):
         schema_name = self.__class__.__name__
         config = MOCK_CONFIG.get(schema_name, {})
         body_rules = config.get("__body_rules__", [])
-        
-        data_dict = self.model_dump()
+
+        # Avoid model_dump() overhead; we only need the validated scalar fields for rule evaluation.
+        data_dict = {name: getattr(self, name) for name in self.__class__.model_fields.keys()}
         
         self._evaluate_config_body_rules(data_dict, body_rules)
         self._evaluate_decorator_body_rules()
